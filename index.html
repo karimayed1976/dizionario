@@ -141,7 +141,7 @@
   </footer>
 
   <!-- Modale voce -->
-  <div class="overlay" id="ovEntry" onclick="if(event.target===this)close('ovEntry')">
+  <div class="overlay" id="ovEntry" onclick="if(event.target===this)closeSheet('ovEntry')">
     <div class="sheet">
       <h2 id="entryTitle">Nuova parola</h2>
       <label class="field"><span>Italiano</span><input id="fIt" placeholder="es. ciao" /></label>
@@ -150,42 +150,42 @@
       <label class="field"><span>Note</span><textarea id="fNote" rows="2" placeholder="contesto, esempio… (opzionale)"></textarea></label>
       <div class="btns">
         <button class="primary" onclick="saveEntry()">Salva</button>
-        <button class="ghost" onclick="close('ovEntry')">Annulla</button>
+        <button class="ghost" onclick="closeSheet('ovEntry')">Annulla</button>
       </div>
     </div>
   </div>
 
   <!-- Conferma cancellazione -->
-  <div class="overlay" id="ovDel" onclick="if(event.target===this)close('ovDel')">
+  <div class="overlay" id="ovDel" onclick="if(event.target===this)closeSheet('ovDel')">
     <div class="sheet">
       <h2>Eliminare la voce?</h2>
       <p class="hint" id="delText"></p>
       <div class="btns">
         <button class="primary danger" onclick="confirmDelete()">Elimina</button>
-        <button class="ghost" onclick="close('ovDel')">Annulla</button>
+        <button class="ghost" onclick="closeSheet('ovDel')">Annulla</button>
       </div>
     </div>
   </div>
 
   <!-- Import / Export -->
-  <div class="overlay" id="ovIo" onclick="if(event.target===this)close('ovIo')">
+  <div class="overlay" id="ovIo" onclick="if(event.target===this)closeSheet('ovIo')">
     <div class="sheet">
       <h2 id="ioTitle"></h2>
       <p class="hint" id="ioHint"></p>
       <textarea class="io" id="ioText"></textarea>
       <div class="btns">
         <button class="primary" id="ioApply" onclick="applyImport()" style="display:none">Importa</button>
-        <button class="ghost" onclick="close('ovIo')">Chiudi</button>
+        <button class="ghost" onclick="closeSheet('ovIo')">Chiudi</button>
       </div>
     </div>
   </div>
 
   <!-- Repertorio -->
-  <div class="overlay" id="ovRef" onclick="if(event.target===this)close('ovRef')">
+  <div class="overlay" id="ovRef" onclick="if(event.target===this)closeSheet('ovRef')">
     <div class="sheet">
       <div class="sheethead">
         <h2 style="margin:0">Repertorio fonetico</h2>
-        <button class="x" onclick="close('ovRef')">×</button>
+        <button class="x" onclick="closeSheet('ovRef')">×</button>
       </div>
       <p class="hint">Scrittura <em>franco-arabe</em> (arabizi), uso tunisino. Le
         <strong style="color:var(--accent)">cifre</strong> rendono i suoni arabi privi di lettera latina.
@@ -303,31 +303,31 @@ function clearSearch(){ document.getElementById('search').value=''; onSearch('')
 
 /* ---------- voce ---------- */
 function openAdd(){ editId=null; document.getElementById('entryTitle').textContent='Nuova parola';
-  fIt.value=''; fTn.value=''; fNote.value=''; open('ovEntry'); setTimeout(function(){fIt.focus();},80); }
+  fIt.value=''; fTn.value=''; fNote.value=''; openSheet('ovEntry'); setTimeout(function(){fIt.focus();},80); }
 function openEdit(id){ var e=entries.find(function(x){return x.id===id;}); if(!e)return; editId=id;
   document.getElementById('entryTitle').textContent='Modifica parola';
-  fIt.value=e.it; fTn.value=e.tn; fNote.value=e.note||''; open('ovEntry'); }
+  fIt.value=e.it; fTn.value=e.tn; fNote.value=e.note||''; openSheet('ovEntry'); }
 function saveEntry(){
   var it=fIt.value.trim(), tn=fTn.value.trim(), note=fNote.value.trim();
   if(!it||!tn){ toast('Servono italiano e traslitterazione'); return; }
   if(editId){ var e=entries.find(function(x){return x.id===editId;}); if(e){e.it=it;e.tn=tn;e.note=note;} }
   else entries.push({id:uid(),it:it,tn:tn,note:note});
-  save(); render(); close('ovEntry');
+  save(); render(); closeSheet('ovEntry');
 }
 function askDelete(id){ delId=id; var e=entries.find(function(x){return x.id===id;});
-  document.getElementById('delText').innerHTML='<strong>'+esc(e.it)+'</strong> → '+esc(e.tn); open('ovDel'); }
-function confirmDelete(){ entries=entries.filter(function(x){return x.id!==delId;}); save(); render(); close('ovDel'); }
+  document.getElementById('delText').innerHTML='<strong>'+esc(e.it)+'</strong> → '+esc(e.tn); openSheet('ovDel'); }
+function confirmDelete(){ entries=entries.filter(function(x){return x.id!==delId;}); save(); render(); closeSheet('ovDel'); }
 
 /* ---------- import / export ---------- */
 function doExport(){ ioMode='export'; document.getElementById('ioTitle').textContent='Esporta (backup)';
   document.getElementById('ioHint').textContent='Copia e conserva questo testo: è il backup completo della rubrica.';
   var t=JSON.stringify(entries,null,2); document.getElementById('ioText').value=t;
   document.getElementById('ioText').readOnly=true; document.getElementById('ioApply').style.display='none';
-  open('ovIo'); try{ navigator.clipboard.writeText(t); toast('Copiato negli appunti'); }catch(e){} }
+  openSheet('ovIo'); try{ navigator.clipboard.writeText(t); toast('Copiato negli appunti'); }catch(e){} }
 function doImport(){ ioMode='import'; document.getElementById('ioTitle').textContent='Importa parole';
   document.getElementById('ioHint').textContent='Incolla qui un backup esportato. Le parole vengono aggiunte senza duplicati.';
   document.getElementById('ioText').value=''; document.getElementById('ioText').readOnly=false;
-  document.getElementById('ioApply').style.display='block'; open('ovIo'); }
+  document.getElementById('ioApply').style.display='block'; openSheet('ovIo'); }
 function applyImport(){
   try{
     var data=JSON.parse(document.getElementById('ioText').value);
@@ -336,7 +336,7 @@ function applyImport(){
     var seen={}; entries.forEach(function(x){seen[key(x)]=1;});
     data.forEach(function(d){ if(d&&d.it&&d.tn){ var o={id:d.id||uid(),it:String(d.it),tn:String(d.tn),note:String(d.note||'')};
       if(!seen[key(o)]){ entries.push(o); seen[key(o)]=1; } } });
-    save(); render(); close('ovIo'); toast('Importazione completata');
+    save(); render(); closeSheet('ovIo'); toast('Importazione completata');
   }catch(e){ toast('Testo non valido'); }
 }
 
@@ -348,12 +348,12 @@ function openRef(){
   document.getElementById('refBody').innerHTML =
     '<div class="secttl">Alfabeto</div><div class="tbl">'+rowsHtml(TRANSLIT)+'</div>'+
     '<div class="secttl">Lettere aggiuntive (maghrebine e prestiti)</div><div class="tbl">'+rowsHtml(EXTRA)+'</div>';
-  open('ovRef');
+  openSheet('ovRef');
 }
 
 /* ---------- overlay + toast ---------- */
-function open(id){ document.getElementById(id).classList.add('open'); }
-function close(id){ document.getElementById(id).classList.remove('open'); }
+function openSheet(id){ document.getElementById(id).classList.add('open'); }
+function closeSheet(id){ document.getElementById(id).classList.remove('open'); }
 var toastT;
 function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove('show');},1800); }
