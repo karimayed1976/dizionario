@@ -54,6 +54,10 @@
   .qtimer{font-family:var(--sans);font-size:14px;font-weight:600;color:var(--accent);text-align:center;margin-top:6px;}
   .qfoot{text-align:center;margin-top:2px;}
   .qfbtn{background:var(--card);border:1px solid var(--cardEdge);border-radius:20px;padding:7px 14px;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;}
+  .qhint{text-align:center;margin-top:10px;min-height:18px;}
+  .qmask{display:block;font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:22px;letter-spacing:4px;color:var(--accent);white-space:pre;}
+  .qlen{display:block;font-family:var(--sans);font-size:11px;color:var(--faint);letter-spacing:.5px;text-transform:uppercase;margin-top:3px;}
+  button:disabled{opacity:.45;cursor:default;}
   .search{margin-top:12px;display:flex;align-items:center;gap:8px;background:var(--card);
     border:1px solid var(--cardEdge);border-radius:10px;padding:9px 12px;}
   .search input{border:none;outline:none;background:transparent;flex:1;font-family:var(--sans);
@@ -391,6 +395,7 @@ var quizTimed=false;      // modalità a tempo
 var quizMode='all';       // 'all' | 'wrong' (ripasso errori)
 var quizWrong=[];         // id delle parole sbagliate nella sessione
 var quizTimerId=null, quizTimeLeft=0;
+var hintLevel=0;
 var QUIZ_SECONDS=15;
 
 function quizAll(){
@@ -398,7 +403,13 @@ function quizAll(){
   var arr=[]; try{ arr=JSON.parse(store.get(KEY))||[]; }catch(e){ arr=[]; }
   return arr.filter(function(e){ return e && e.it && e.tn; });
 }
-function normalize(s){ return (s||'').toLowerCase().trim().replace(/\s+/g,' '); }
+function normalize(s){
+  return (s||'')
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u02bc\u02bb\u02be\u02bf\u2032\u00b4\u0060]/g, "'") // apostrofi vari → '
+    .trim()
+    .replace(/\s+/g,' ');
+}
 function quizPromptText(e){ return quizDir==='it2tn' ? e.it : e.tn; }
 function quizAnswerText(e){ return quizDir==='it2tn' ? e.tn : e.it; }
 function quizAccepts(e){
@@ -456,6 +467,7 @@ function quizOptsHtml(){
 
 function quizNext(){
   quizStopTimer();
+  hintLevel=0;
   var pool = quizMode==='wrong' ? quizWrongExisting() : quizAll();
 
   if(quizMode==='wrong' && pool.length===0){
@@ -482,8 +494,12 @@ function quizNext(){
     '<div class="qword">'+esc(quizPromptText(pick))+'</div>'+
     (quizTimed?'<div class="qtimer" id="qTimer">⏱ '+QUIZ_SECONDS+'</div>':'')+
     '<input class="qinput" id="qInput" placeholder="scrivi qui…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />'+
+    '<div class="qhint" id="qHint"></div>'+
     '<div class="qfb" id="qFb"></div>'+
-    '<div class="btns" style="margin-top:8px"><button class="primary" id="qBtn" onclick="quizCheck()">Verifica</button></div>'+
+    '<div class="btns" style="margin-top:8px">'+
+      '<button class="primary" id="qBtn" onclick="quizCheck()">Verifica</button>'+
+      '<button class="ghost" id="qHintBtn" onclick="quizHint()">💡 Suggerimento</button>'+
+    '</div>'+
     '<div class="qscore" id="qScore">'+quizScoreText()+'</div>';
   var inp=document.getElementById('qInput');
   inp.focus();
@@ -493,12 +509,35 @@ function quizNext(){
 
 function quizReveal(correct, message){
   var inp=document.getElementById('qInput'), btn=document.getElementById('qBtn'), fb=document.getElementById('qFb');
+  var hb=document.getElementById('qHintBtn'); if(hb) hb.disabled=true;
   quizTotal++;
   if(correct){ quizRight++; quizClearWrong(quizCur); fb.className='qfb ok'; fb.textContent='✓ Esatto!'; }
   else { quizMarkWrong(quizCur); fb.className='qfb no'; fb.innerHTML=message; }
   if(inp) inp.disabled=true;
   document.getElementById('qScore').textContent=quizScoreText();
   btn.textContent='Prossima ▷'; btn.setAttribute('data-next','1');
+}
+
+/* suggerimento progressivo: svela una lettera alla volta, il resto sono asterischi */
+function quizMask(target, level){
+  var shown=0, out='';
+  for(var i=0;i<target.length;i++){
+    var c=target.charAt(i);
+    if(c===' '){ out+=' '; continue; }
+    shown++;
+    out += (shown<=level ? c : '*');
+  }
+  return out;
+}
+function quizHint(){
+  if(!quizCur) return;
+  var target = quizAnswerText(quizCur).split(/[\/,;]/)[0].trim();
+  var letters = target.replace(/\s/g,'').length;
+  if(hintLevel < letters) hintLevel++;
+  document.getElementById('qHint').innerHTML =
+    '<span class="qmask">'+esc(quizMask(target,hintLevel))+'</span>'+
+    '<span class="qlen">'+letters+(letters===1?' lettera':' lettere')+'</span>';
+  if(hintLevel>=letters){ var b=document.getElementById('qHintBtn'); if(b) b.disabled=true; }
 }
 function quizTimeUp(){
   if(!quizCur) return;

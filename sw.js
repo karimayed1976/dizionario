@@ -1,4 +1,4 @@
-const CACHE = 'rubrica-v4';
+const CACHE = 'rubrica-v6';
 const ASSETS = [
   './',
   './index.html',
