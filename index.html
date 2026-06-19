@@ -32,9 +32,28 @@
   .titlerow .tag{font-family:var(--sans);font-size:11px;color:var(--muted);
     letter-spacing:1.4px;text-transform:uppercase;}
   .count{font-family:var(--sans);font-size:12px;color:var(--faint);margin-top:3px;}
-  .alfa-btn{position:absolute;top:15px;right:16px;display:inline-flex;align-items:center;gap:5px;
+  .hbtns{position:absolute;top:15px;right:16px;display:flex;gap:8px;}
+  .alfa-btn{display:inline-flex;align-items:center;gap:5px;
     background:var(--card);border:1px solid var(--cardEdge);border-radius:20px;padding:7px 12px;
     font-size:12px;font-weight:600;color:var(--accent2);}
+  .alfa-btn.q{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .qsub{font-family:var(--sans);font-size:12px;color:var(--faint);text-align:center;letter-spacing:1px;text-transform:uppercase;}
+  .qword{font-size:30px;font-weight:600;text-align:center;margin:16px 0 4px;color:var(--ink);}
+  .qinput{width:100%;font-family:var(--serif);font-size:20px;text-align:center;color:var(--accent);font-weight:600;
+    padding:12px;border:1px solid var(--cardEdge);border-radius:10px;background:#fff;outline:none;margin-top:14px;}
+  .qfb{font-family:var(--sans);font-size:15px;text-align:center;margin-top:12px;min-height:22px;}
+  .qfb.ok{color:var(--accent2);font-weight:600;} .qfb.no{color:var(--accent);font-weight:600;}
+  .qscore{font-family:var(--sans);font-size:12px;color:var(--muted);text-align:center;margin-top:10px;}
+  .qempty{font-family:var(--sans);color:var(--muted);text-align:center;padding:24px 0;line-height:1.5;}
+  .qopts{display:flex;flex-direction:column;gap:8px;margin-bottom:8px;}
+  .qrow{display:flex;align-items:center;gap:8px;}
+  .qrow .lbl{font-family:var(--sans);font-size:12px;color:var(--faint);width:58px;flex:none;text-transform:uppercase;letter-spacing:.5px;}
+  .seg{display:flex;flex:1;background:var(--card);border:1px solid var(--cardEdge);border-radius:10px;overflow:hidden;}
+  .seg button{flex:1;border:none;background:transparent;padding:8px 6px;border-radius:0;font-family:var(--sans);font-size:13px;color:var(--muted);cursor:pointer;}
+  .seg button.on{background:var(--accent2);color:#fff;font-weight:600;}
+  .qtimer{font-family:var(--sans);font-size:14px;font-weight:600;color:var(--accent);text-align:center;margin-top:6px;}
+  .qfoot{text-align:center;margin-top:2px;}
+  .qfbtn{background:var(--card);border:1px solid var(--cardEdge);border-radius:20px;padding:7px 14px;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--accent);cursor:pointer;}
   .search{margin-top:12px;display:flex;align-items:center;gap:8px;background:var(--card);
     border:1px solid var(--cardEdge);border-radius:10px;padding:9px 12px;}
   .search input{border:none;outline:none;background:transparent;flex:1;font-family:var(--sans);
@@ -114,7 +133,10 @@
 </head>
 <body>
   <header>
-    <button class="alfa-btn" onclick="openRef()">⇆ Alfabeto</button>
+    <div class="hbtns">
+      <button class="alfa-btn q" onclick="openQuiz()">▷ Quiz</button>
+      <button class="alfa-btn" onclick="openRef()">⇆ Alfabeto</button>
+    </div>
     <div class="titlerow">
       <span style="color:var(--accent);font-size:20px;">❦</span>
       <h1>Rubrica</h1>
@@ -194,6 +216,17 @@
       <p class="hint" style="color:var(--faint);font-size:12px;margin-top:2px">
         Promemoria cifre: 2 = ء · 3 = ع · 5 = خ · 6 = ط · 7 = ح · 9 = ق.
         L'apostrofo segna la variante “forte”: 3' = غ, 6' = ظ.</p>
+    </div>
+  </div>
+
+  <!-- Quiz -->
+  <div class="overlay" id="ovQuiz" onclick="if(event.target===this)quizClose()">
+    <div class="sheet">
+      <div class="sheethead">
+        <h2 style="margin:0">Quiz</h2>
+        <button class="x" onclick="quizClose()">×</button>
+      </div>
+      <div id="quizBody"></div>
     </div>
   </div>
 
@@ -349,6 +382,137 @@ function openRef(){
     '<div class="secttl">Alfabeto</div><div class="tbl">'+rowsHtml(TRANSLIT)+'</div>'+
     '<div class="secttl">Lettere aggiuntive (maghrebine e prestiti)</div><div class="tbl">'+rowsHtml(EXTRA)+'</div>';
   openSheet('ovRef');
+}
+
+/* ---------- quiz ---------- */
+var quizCur=null, quizRight=0, quizTotal=0;
+var quizDir='it2tn';      // 'it2tn' (mostra italiano) | 'tn2it' (mostra tunisino)
+var quizTimed=false;      // modalità a tempo
+var quizMode='all';       // 'all' | 'wrong' (ripasso errori)
+var quizWrong=[];         // id delle parole sbagliate nella sessione
+var quizTimerId=null, quizTimeLeft=0;
+var QUIZ_SECONDS=15;
+
+function quizAll(){
+  // rilegge SEMPRE le parole salvate: così il quiz cresce con la rubrica
+  var arr=[]; try{ arr=JSON.parse(store.get(KEY))||[]; }catch(e){ arr=[]; }
+  return arr.filter(function(e){ return e && e.it && e.tn; });
+}
+function normalize(s){ return (s||'').toLowerCase().trim().replace(/\s+/g,' '); }
+function quizPromptText(e){ return quizDir==='it2tn' ? e.it : e.tn; }
+function quizAnswerText(e){ return quizDir==='it2tn' ? e.tn : e.it; }
+function quizAccepts(e){
+  // accetta più grafie se separate da / , ; nel campo della risposta
+  return quizAnswerText(e).split(/[\/,;]/).map(normalize).filter(Boolean);
+}
+function quizScoreText(){ return quizTotal ? ('punteggio: '+quizRight+' / '+quizTotal) : ''; }
+
+function quizWrongExisting(){
+  var byId={}; quizAll().forEach(function(e){ byId[e.id]=e; });
+  return quizWrong.map(function(id){ return byId[id]; }).filter(Boolean);
+}
+function quizMarkWrong(e){ if(e && e.id && quizWrong.indexOf(e.id)<0) quizWrong.push(e.id); }
+function quizClearWrong(e){ if(!e) return; var i=quizWrong.indexOf(e.id); if(i>=0) quizWrong.splice(i,1); }
+
+function quizStopTimer(){ if(quizTimerId){ clearInterval(quizTimerId); quizTimerId=null; } }
+function quizStartTimer(){
+  quizStopTimer();
+  if(!quizTimed) return;
+  quizTimeLeft=QUIZ_SECONDS;
+  var el=document.getElementById('qTimer'); if(el) el.textContent='⏱ '+quizTimeLeft;
+  quizTimerId=setInterval(function(){
+    quizTimeLeft--;
+    var e2=document.getElementById('qTimer'); if(e2) e2.textContent='⏱ '+quizTimeLeft;
+    if(quizTimeLeft<=0){ quizStopTimer(); quizTimeUp(); }
+  },1000);
+}
+
+function quizClose(){ quizStopTimer(); closeSheet('ovQuiz'); }
+function openQuiz(){ quizRight=0; quizTotal=0; quizCur=null; quizMode='all'; quizWrong=[]; openSheet('ovQuiz'); quizNext(); }
+
+function quizSetDir(d){ quizDir=d; quizNext(); }
+function quizSetTimed(b){ quizTimed=b; quizNext(); }
+function quizSetMode(m){ quizMode=m; quizNext(); }
+
+function quizOptsHtml(){
+  function seg(on){ return on?'on':''; }
+  var wrongN=quizWrongExisting().length, foot='';
+  if(quizMode==='wrong'){
+    foot='<button class="qfbtn" onclick="quizSetMode(\'all\')">↺ Tutte le parole</button>';
+  } else if(wrongN>0){
+    foot='<button class="qfbtn" onclick="quizSetMode(\'wrong\')">Ripassa gli errori ('+wrongN+')</button>';
+  }
+  return '<div class="qopts">'+
+    '<div class="qrow"><span class="lbl">Verso</span><div class="seg">'+
+      '<button class="'+seg(quizDir==='it2tn')+'" onclick="quizSetDir(\'it2tn\')">it → tn</button>'+
+      '<button class="'+seg(quizDir==='tn2it')+'" onclick="quizSetDir(\'tn2it\')">tn → it</button>'+
+    '</div></div>'+
+    '<div class="qrow"><span class="lbl">A tempo</span><div class="seg">'+
+      '<button class="'+seg(!quizTimed)+'" onclick="quizSetTimed(false)">off</button>'+
+      '<button class="'+seg(quizTimed)+'" onclick="quizSetTimed(true)">'+QUIZ_SECONDS+'s</button>'+
+    '</div></div>'+
+  '</div>' + (foot?('<div class="qfoot">'+foot+'</div>'):'');
+}
+
+function quizNext(){
+  quizStopTimer();
+  var pool = quizMode==='wrong' ? quizWrongExisting() : quizAll();
+
+  if(quizMode==='wrong' && pool.length===0){
+    quizMode='all';
+    document.getElementById('quizBody').innerHTML = quizOptsHtml() +
+      '<p class="qempty">Bravo: nessun errore da ripassare.<br>Continuo con tutte le parole.</p>'+
+      '<div class="btns" style="margin-top:8px"><button class="primary" onclick="quizNext()">Continua ▷</button></div>';
+    quizCur=null; return;
+  }
+  if(pool.length===0){
+    document.getElementById('quizBody').innerHTML = quizOptsHtml() +
+      '<p class="qempty">La rubrica è ancora vuota.<br>Aggiungi qualche parola e torna a giocare.</p>';
+    quizCur=null; return;
+  }
+
+  var lastId = quizCur && quizCur.id, pick;
+  do { pick = pool[Math.floor(Math.random()*pool.length)]; }
+  while(pool.length>1 && lastId && pick.id===lastId);
+  quizCur=pick;
+
+  var sub = quizDir==='it2tn' ? 'come si dice in tunisino' : 'che parola italiana è';
+  document.getElementById('quizBody').innerHTML = quizOptsHtml() +
+    '<div class="qsub">'+sub+'</div>'+
+    '<div class="qword">'+esc(quizPromptText(pick))+'</div>'+
+    (quizTimed?'<div class="qtimer" id="qTimer">⏱ '+QUIZ_SECONDS+'</div>':'')+
+    '<input class="qinput" id="qInput" placeholder="scrivi qui…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />'+
+    '<div class="qfb" id="qFb"></div>'+
+    '<div class="btns" style="margin-top:8px"><button class="primary" id="qBtn" onclick="quizCheck()">Verifica</button></div>'+
+    '<div class="qscore" id="qScore">'+quizScoreText()+'</div>';
+  var inp=document.getElementById('qInput');
+  inp.focus();
+  inp.onkeydown=function(e){ if(e.key==='Enter') quizCheck(); };
+  quizStartTimer();
+}
+
+function quizReveal(correct, message){
+  var inp=document.getElementById('qInput'), btn=document.getElementById('qBtn'), fb=document.getElementById('qFb');
+  quizTotal++;
+  if(correct){ quizRight++; quizClearWrong(quizCur); fb.className='qfb ok'; fb.textContent='✓ Esatto!'; }
+  else { quizMarkWrong(quizCur); fb.className='qfb no'; fb.innerHTML=message; }
+  if(inp) inp.disabled=true;
+  document.getElementById('qScore').textContent=quizScoreText();
+  btn.textContent='Prossima ▷'; btn.setAttribute('data-next','1');
+}
+function quizTimeUp(){
+  if(!quizCur) return;
+  quizReveal(false, '⏱ Tempo scaduto. Era: <strong>'+esc(quizAnswerText(quizCur))+'</strong>');
+}
+function quizCheck(){
+  if(!quizCur) return;
+  var inp=document.getElementById('qInput'), btn=document.getElementById('qBtn');
+  if(btn.getAttribute('data-next')==='1'){ quizNext(); return; }  // stato "Prossima"
+  var ans=normalize(inp.value);
+  if(!ans) return;
+  quizStopTimer();
+  var ok = quizAccepts(quizCur).indexOf(ans)>=0;
+  quizReveal(ok, '✗ La risposta era: <strong>'+esc(quizAnswerText(quizCur))+'</strong>');
 }
 
 /* ---------- overlay + toast ---------- */
