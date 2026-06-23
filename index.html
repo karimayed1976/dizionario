@@ -682,6 +682,13 @@ window.addEventListener('DOMContentLoaded',function(){
   fIt=document.getElementById('fIt'); fTn=document.getElementById('fTn'); fNote=document.getElementById('fNote');
   load(); render();
   if(syncConfigured()) syncNow(true);
+  // sincronizza ogni volta che l'app torna in primo piano
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState==='visible' && syncConfigured()) syncNow(true);
+  });
+  window.addEventListener('pageshow', function(e){
+    if(e.persisted && syncConfigured()) syncNow(true);
+  });
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
 });
 </script>
