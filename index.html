@@ -164,6 +164,7 @@
   <footer>
     <button onclick="doExport()">⤓ Esporta</button>
     <button onclick="doImport()">⤒ Importa</button>
+    <button onclick="openSync()">⟳ Sync</button>
   </footer>
 
   <!-- Modale voce -->
@@ -231,6 +232,29 @@
         <button class="x" onclick="quizClose()">×</button>
       </div>
       <div id="quizBody"></div>
+    </div>
+  </div>
+
+  <!-- Sincronizzazione -->
+  <div class="overlay" id="ovSync" onclick="if(event.target===this)closeSheet('ovSync')">
+    <div class="sheet">
+      <div class="sheethead">
+        <h2 style="margin:0">Sincronizzazione</h2>
+        <button class="x" onclick="closeSheet('ovSync')">×</button>
+      </div>
+      <p class="hint" style="margin-top:0">Tiene allineate le parole tra i tuoi dispositivi usando un tuo repository
+        GitHub <strong>privato</strong>. I dati restano tuoi; il token vive solo su questo dispositivo.</p>
+      <label class="field"><span>Utente GitHub</span><input id="syOwner" placeholder="es. karimayed1976" autocapitalize="off" autocorrect="off" spellcheck="false" /></label>
+      <label class="field"><span>Repository dei dati (privato)</span><input id="syRepo" placeholder="es. dizionario-dati" autocapitalize="off" autocorrect="off" spellcheck="false" /></label>
+      <label class="field"><span>Token di accesso</span><input id="syToken" type="password" placeholder="incolla qui il token" autocapitalize="off" autocorrect="off" spellcheck="false" /></label>
+      <div class="btns" style="margin-top:6px">
+        <button class="primary" onclick="syncSaveAndRun()">Salva e sincronizza</button>
+        <button class="ghost" onclick="syncNow(false)">Sincronizza ora</button>
+      </div>
+      <div class="qscore" id="syStatus" style="margin-top:12px;min-height:18px"></div>
+      <p class="hint" style="font-size:12px;color:var(--faint);margin-bottom:0">
+        Il token è una chiave: tienilo riservato. Crealo con accesso al <strong>solo</strong> repository dei dati e
+        permesso <em>Contents: lettura e scrittura</em>. Non va mai messo nel repository pubblico dell'app.</p>
     </div>
   </div>
 
@@ -349,11 +373,11 @@ function saveEntry(){
   if(!it||!tn){ toast('Servono italiano e traslitterazione'); return; }
   if(editId){ var e=entries.find(function(x){return x.id===editId;}); if(e){e.it=it;e.tn=tn;e.note=note;} }
   else entries.push({id:uid(),it:it,tn:tn,note:note});
-  save(); render(); closeSheet('ovEntry');
+  save(); render(); closeSheet('ovEntry'); scheduleSync();
 }
 function askDelete(id){ delId=id; var e=entries.find(function(x){return x.id===id;});
   document.getElementById('delText').innerHTML='<strong>'+esc(e.it)+'</strong> → '+esc(e.tn); openSheet('ovDel'); }
-function confirmDelete(){ entries=entries.filter(function(x){return x.id!==delId;}); save(); render(); closeSheet('ovDel'); }
+function confirmDelete(){ syncTomb(delId); entries=entries.filter(function(x){return x.id!==delId;}); save(); render(); closeSheet('ovDel'); scheduleSync(); }
 
 /* ---------- import / export ---------- */
 function doExport(){ ioMode='export'; document.getElementById('ioTitle').textContent='Esporta (backup)';
@@ -373,7 +397,7 @@ function applyImport(){
     var seen={}; entries.forEach(function(x){seen[key(x)]=1;});
     data.forEach(function(d){ if(d&&d.it&&d.tn){ var o={id:d.id||uid(),it:String(d.it),tn:String(d.tn),note:String(d.note||'')};
       if(!seen[key(o)]){ entries.push(o); seen[key(o)]=1; } } });
-    save(); render(); closeSheet('ovIo'); toast('Importazione completata');
+    save(); render(); closeSheet('ovIo'); toast('Importazione completata'); scheduleSync();
   }catch(e){ toast('Testo non valido'); }
 }
 
@@ -554,6 +578,97 @@ function quizCheck(){
   quizReveal(ok, '✗ La risposta era: <strong>'+esc(quizAnswerText(quizCur))+'</strong>');
 }
 
+/* ---------- sincronizzazione via GitHub ---------- */
+var SYNC_FILE='rubrica.json';
+var TOMB_KEY='rubrica-deleted';
+var syncing=false, syncTimer=null;
+
+function syncCfg(){ try{ return JSON.parse(store.get('rubrica-sync'))||{}; }catch(e){ return {}; } }
+function syncSaveCfg(c){ store.set('rubrica-sync', JSON.stringify(c)); }
+function syncTombs(){ try{ return JSON.parse(store.get(TOMB_KEY))||[]; }catch(e){ return []; } }
+function syncTomb(id){ if(!id) return; var t=syncTombs(); if(t.indexOf(id)<0){ t.push(id); store.set(TOMB_KEY, JSON.stringify(t)); } }
+function syncSaveTombs(t){ store.set(TOMB_KEY, JSON.stringify(t)); }
+
+function syncConfigured(){ var c=syncCfg(); return !!(c.owner && c.repo && c.token); }
+function syncStatus(msg){ var el=document.getElementById('syStatus'); if(el) el.textContent=msg; }
+
+function openSync(){
+  var c=syncCfg();
+  document.getElementById('syOwner').value=c.owner||'';
+  document.getElementById('syRepo').value=c.repo||'';
+  document.getElementById('syToken').value=c.token||'';
+  syncStatus(c.last? ('ultima sincronizzazione: '+new Date(c.last).toLocaleString()) : 'non ancora configurata');
+  openSheet('ovSync');
+}
+function syncSaveAndRun(){
+  var c=syncCfg();
+  c.owner=document.getElementById('syOwner').value.trim().replace(/^@/,'');
+  c.repo=document.getElementById('syRepo').value.trim();
+  c.token=document.getElementById('syToken').value.trim();
+  syncSaveCfg(c);
+  syncNow(false);
+}
+
+// base64 <-> testo, gestendo bene gli accenti e l'arabo
+function b64encode(str){ return btoa(unescape(encodeURIComponent(str))); }
+function b64decode(b64){ return decodeURIComponent(escape(atob((b64||'').replace(/\s/g,'')))); }
+
+function ghHeaders(c){ return {Authorization:'Bearer '+c.token, Accept:'application/vnd.github+json'}; }
+function ghUrl(c){ return 'https://api.github.com/repos/'+c.owner+'/'+c.repo+'/contents/'+SYNC_FILE; }
+
+function ghGet(c){
+  return fetch(ghUrl(c), {headers:ghHeaders(c)}).then(function(r){
+    if(r.status===404) return {entries:[], deleted:[], sha:null};
+    if(r.status===401) throw new Error('token non valido o scaduto');
+    if(r.status===403) throw new Error('permessi del token insufficienti');
+    if(!r.ok) throw new Error('lettura fallita ('+r.status+')');
+    return r.json().then(function(j){
+      var obj={entries:[],deleted:[]};
+      try{ var p=JSON.parse(b64decode(j.content)); if(Array.isArray(p)) obj.entries=p; else { obj.entries=p.entries||[]; obj.deleted=p.deleted||[]; } }catch(e){}
+      obj.sha=j.sha; return obj;
+    });
+  });
+}
+function ghPut(c, payload, sha){
+  var body={message:'aggiorno rubrica', content:b64encode(JSON.stringify(payload,null,2))};
+  if(sha) body.sha=sha;
+  return fetch(ghUrl(c), {method:'PUT', headers:ghHeaders(c), body:JSON.stringify(body)}).then(function(r){
+    if(!r.ok) throw new Error('scrittura fallita ('+r.status+')');
+    return r.json();
+  });
+}
+
+function syncMerge(remoteEntries, remoteDeleted, localEntries, localDeleted){
+  var deleted={}; (remoteDeleted||[]).concat(localDeleted||[]).forEach(function(id){ deleted[id]=1; });
+  var byId={};
+  (remoteEntries||[]).forEach(function(e){ if(e&&e.id) byId[e.id]=e; });
+  (localEntries||[]).forEach(function(e){ if(e&&e.id) byId[e.id]=e; }); // su stesso id vince il locale
+  var merged=Object.keys(byId).filter(function(id){ return !deleted[id]; }).map(function(id){ return byId[id]; });
+  return {entries:merged, deleted:Object.keys(deleted)};
+}
+
+function syncNow(silent){
+  var c=syncCfg();
+  if(!(c.owner&&c.repo&&c.token)){ if(!silent){ openSync(); syncStatus('Inserisci utente, repository e token, poi tocca "Salva e sincronizza".'); } return; }
+  if(syncing) return;
+  syncing=true; if(!silent) syncStatus('Sincronizzo…');
+  ghGet(c).then(function(remote){
+    var m=syncMerge(remote.entries, remote.deleted, entries, syncTombs());
+    entries=m.entries; save(); syncSaveTombs(m.deleted); render();
+    return ghPut(c, {entries:m.entries, deleted:m.deleted}, remote.sha);
+  }).then(function(){
+    c.last=Date.now(); syncSaveCfg(c);
+    if(!silent){ syncStatus('Sincronizzato ✓  '+new Date(c.last).toLocaleTimeString()); toast('Sincronizzato'); }
+  }).catch(function(e){
+    if(!silent){ syncStatus('Errore: '+e.message); toast('Sync non riuscito'); }
+  }).then(function(){ syncing=false; });
+}
+function scheduleSync(){
+  if(!syncConfigured()) return;
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(function(){ syncNow(true); }, 2500);
+}
+
 /* ---------- overlay + toast ---------- */
 function openSheet(id){ document.getElementById(id).classList.add('open'); }
 function closeSheet(id){ document.getElementById(id).classList.remove('open'); }
@@ -566,6 +681,7 @@ var fIt,fTn,fNote;
 window.addEventListener('DOMContentLoaded',function(){
   fIt=document.getElementById('fIt'); fTn=document.getElementById('fTn'); fNote=document.getElementById('fNote');
   load(); render();
+  if(syncConfigured()) syncNow(true);
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(function(){}); }
 });
 </script>
